@@ -21,7 +21,12 @@
     </div>
   </div>
   <!-- Scripts in load order. All Phase 1 modules are vanilla classic scripts
-       that attach to globals (no ES modules, keeps file:// testing simple). -->
+       that attach to globals (no ES modules, keeps file:// testing simple).
+       params.js -> physics.js -> renderer.js -> app.js (app.js consumes all
+       three; physics.js and params.js are independent of each other). -->
+  <script src="js/params.js"></script>
+  <script src="js/physics.js"></script>
+  <script src="js/renderer.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>

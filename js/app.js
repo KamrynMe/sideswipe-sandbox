@@ -1,25 +1,27 @@
 /*
- * app.js -- Milestone 2 entry point.
+ * app.js -- Milestone 2.5 entry point.
  *
  * Responsibilities:
  *   - Register the service worker.
- *   - Maintain physics state.
- *   - Run the fixed-timestep accumulator: physics ticks at params.physicsHz,
- *     render runs at requestAnimationFrame rate. NEVER call step with a
- *     variable dt; that breaks determinism + reproducibility.
- *   - Handle "tap to reset" so the user can repeatedly drop the ball.
- *   - Drive the FPS HUD line.
- *
- * No driving / input forces yet -- those land in M3. M2 is for the user
- * to feel-test ball bounce: gravity, ballRestitution, ballDrag.
- *
- * Architectural guardrails (carry forward):
- *   - physics.js must remain DOM-free. We import it via window.PHYS.
- *   - All tunable values come from params.js. No magic numbers here.
+ *   - Hold the live params object (mutable; the UI mutates it). Note: this
+ *     is the ONE place we deviate from "params is frozen": we keep a mutable
+ *     working copy here so sliders can update values in-place without
+ *     allocating new objects per frame. The frozen DEFAULT_PARAMS in
+ *     params.js remains untouched.
+ *   - Run the fixed-timestep accumulator (physics at params.physicsHz,
+ *     render at requestAnimationFrame).
+ *   - Persist the live params to localStorage so they survive reloads.
+ *   - Wire UI controller: sliders set params, button copies diagnostics,
+ *     reset reverts to DEFAULT_PARAMS.
+ *   - Feed the REPLAY recorder every physics tick so we capture bounces,
+ *     periodic snapshots, and parameter changes for the diagnostics blob.
+ *   - Tap-to-reset on the canvas re-drops the ball with the live params.
  */
 
 (function () {
   'use strict';
+
+  const STORAGE_KEY = 'ss-sandbox:params';
 
   // -------------------------------------------------------------------
   // Service worker registration
@@ -59,32 +61,63 @@
   }
 
   // -------------------------------------------------------------------
-  // FPS tracker (EMA, throttled UI updates)
+  // FPS tracker
   // -------------------------------------------------------------------
 
-  function makeFpsTracker(updateEveryMs) {
+  function makeFpsTracker() {
     let lastT = performance.now();
     let emaFps = 60;
-    let lastUiUpdate = 0;
-    const el = document.getElementById('fps-line');
     const alpha = 0.1;
-    return function tick(now) {
-      const dt = now - lastT;
-      lastT = now;
-      if (dt > 0) emaFps = alpha * (1000 / dt) + (1 - alpha) * emaFps;
-      if (now - lastUiUpdate > updateEveryMs) {
-        lastUiUpdate = now;
-        if (el) el.textContent = 'FPS: ' + emaFps.toFixed(1);
-      }
+    return {
+      tick(now) {
+        const dt = now - lastT;
+        lastT = now;
+        if (dt > 0) emaFps = alpha * (1000 / dt) + (1 - alpha) * emaFps;
+        return emaFps;
+      },
+      get value() { return emaFps; },
     };
   }
 
   // -------------------------------------------------------------------
-  // World state + reset preset
+  // Params: mutable working copy + localStorage persistence
   // -------------------------------------------------------------------
 
-  // Drop preset: ball high, slight horizontal velocity so the bounce has
-  // visible character; car off to one side.
+  function makeLiveParams() {
+    const base = window.PARAMS.DEFAULT_PARAMS;
+    // Mutable copy (NOT frozen).
+    const live = Object.assign({}, base);
+    // Restore from localStorage if present.
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw);
+        // Only restore keys present in defaults to avoid stale schema cruft.
+        for (const k of Object.keys(base)) {
+          if (k in saved && typeof saved[k] === typeof base[k]) live[k] = saved[k];
+        }
+      }
+    } catch (e) {
+      console.warn('[ss-sandbox] failed to restore params:', e);
+    }
+    return live;
+  }
+
+  function persistParams(live) {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(live)); }
+    catch (e) { /* ignore */ }
+  }
+
+  function resetParamsToDefault(live) {
+    const base = window.PARAMS.DEFAULT_PARAMS;
+    for (const k of Object.keys(live)) delete live[k];
+    Object.assign(live, base);
+  }
+
+  // -------------------------------------------------------------------
+  // Drop preset (the M2 free-fall ball drop)
+  // -------------------------------------------------------------------
+
   function makeFreshState(params) {
     return window.PHYS.makeState({
       car: {
@@ -101,64 +134,119 @@
   }
 
   // -------------------------------------------------------------------
-  // Status line update
-  // -------------------------------------------------------------------
-
-  function updateStatus(state) {
-    const el = document.getElementById('status-line');
-    if (!el) return;
-    el.textContent = 'M2 — tap to reset · t=' + state.t.toFixed(2) + 's';
-  }
-
-  // -------------------------------------------------------------------
   // Boot
   // -------------------------------------------------------------------
 
   function boot() {
     const { canvas, ctx } = setupCanvas();
-    const fpsTick = makeFpsTracker(250);
     const PHYS = window.PHYS;
     const REND = window.REND;
     const PARAMS = window.PARAMS;
-    if (!PHYS || !REND || !PARAMS) {
-      console.error('[ss-sandbox] missing module(s); check script order');
+    const REPLAY = window.REPLAY;
+    const DIAG = window.DIAG;
+    const UI = window.UI;
+    if (!PHYS || !REND || !PARAMS || !REPLAY || !DIAG || !UI) {
+      console.error('[ss-sandbox] missing module(s)');
       return;
     }
-    const params = PARAMS.DEFAULT_PARAMS;
-    const dt = 1 / params.physicsHz;
+
+    const params = makeLiveParams();
     let state = makeFreshState(params);
     const action = PHYS.makeAction();
+    const fps = makeFpsTracker();
+    const recorder = REPLAY.makeRecorder();
+    recorder.reset(params, state);
 
-    // Tap / click anywhere to reset (drop ball again).
-    function reset() {
-      state = makeFreshState(params);
-    }
+    let paramsDirtySince = null;
+    let userNotes = '';
+
+    // Controller: exposed to the UI module so it can mutate params + copy.
+    const controller = {
+      getParams() { return params; },
+      setParam(key, value) {
+        if (typeof params[key] !== 'number' && typeof params[key] !== 'undefined') {
+          // (We only have numeric tunables in M2.)
+          return;
+        }
+        params[key] = value;
+        paramsDirtySince = paramsDirtySince || new Date().toISOString();
+        persistParams(params);
+        recorder.noteParamChange(params, state.t);
+      },
+      resetParams() {
+        resetParamsToDefault(params);
+        paramsDirtySince = null;
+        persistParams(params);
+        recorder.noteParamChange(params, state.t);
+      },
+      setUserNotes(text) { userNotes = text; },
+      async copyDiagnostics() {
+        const meta = {
+          milestone: 'M2.5',
+          fpsAvg: fps.value,
+          devicePixelRatio: window.devicePixelRatio || 1,
+          screenW: window.innerWidth,
+          screenH: window.innerHeight,
+          paramsDirtySince: paramsDirtySince,
+        };
+        const payload = DIAG.composePayload(params, state, recorder,
+                                            userNotes, meta);
+        const text = DIAG.stringify(payload);
+        return DIAG.copyToClipboard(text);
+      },
+      resetSimulation() {
+        state = makeFreshState(params);
+        recorder.reset(params, state);
+      },
+    };
+
+    const uiHandle = UI.mount(controller, 'M2');
+
+    // Tap-to-reset on the canvas only.
     canvas.addEventListener('pointerdown', (e) => {
       e.preventDefault();
-      reset();
+      controller.resetSimulation();
     }, { passive: false });
 
-    // Accumulator loop. Cap accumulator to avoid "spiral of death" if a
-    // tab is backgrounded and dt jumps to many seconds.
+    // Status HUD update throttling.
+    const statusEl = document.getElementById('status-line');
+    let lastStatusUpdate = 0;
+
+    // Accumulator loop.
     let lastNow = performance.now();
     let accumulator = 0;
-    const MAX_ACCUM = 0.25;        // seconds; clamp to avoid catastrophe
+    const MAX_ACCUM = 0.25;
 
     function frame(now) {
-      fpsTick(now);
+      const fpsNow = fps.tick(now);
+
       let elapsed = (now - lastNow) / 1000;
       lastNow = now;
       if (elapsed > MAX_ACCUM) elapsed = MAX_ACCUM;
       accumulator += elapsed;
+
+      const dt = 1 / params.physicsHz;
       let safety = 1000;
       while (accumulator >= dt && safety-- > 0) {
         PHYS.step(state, action, params, dt);
+        recorder.observe(state, action, params);
         accumulator -= dt;
       }
+
       const cssW = canvas.width / (window.devicePixelRatio || 1);
       const cssH = canvas.height / (window.devicePixelRatio || 1);
       REND.render(ctx, state, params, cssW, cssH);
-      updateStatus(state);
+
+      // HUD updates throttled to ~4 Hz to avoid layout thrash on phone.
+      if (now - lastStatusUpdate > 250) {
+        lastStatusUpdate = now;
+        if (statusEl) {
+          const s = recorder.summarize();
+          statusEl.textContent = 'M2.5 · tap canvas to reset · bounces='
+            + s.bounces.floor + ' · t=' + state.t.toFixed(2) + 's';
+        }
+        uiHandle.onFps(fpsNow);
+      }
       requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);

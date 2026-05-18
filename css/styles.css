@@ -1,10 +1,4 @@
-/* Sideswipe Physics Sandbox -- M0 PWA shell stylesheet.
- *
- * Goals:
- *   - Fullscreen landscape canvas on phone.
- *   - Black background, no scroll, no zoom, no text selection.
- *   - HUD readout in top-left without intercepting touches.
- */
+/* Sideswipe Physics Sandbox -- shell + tuning panel styles. */
 
 * {
   box-sizing: border-box;
@@ -49,18 +43,209 @@ html, body {
   left: env(safe-area-inset-left, 12px);
   pointer-events: none;
   padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.35);
+  background: rgba(0, 0, 0, 0.45);
   border-radius: 6px;
   line-height: 1.4;
   font-feature-settings: "tnum" 1;
   font-variant-numeric: tabular-nums;
 }
 
-#status-line {
-  font-weight: 600;
-  letter-spacing: 0.02em;
+#status-line { font-weight: 600; letter-spacing: 0.02em; }
+#fps-line    { opacity: 0.85; }
+
+/* =========================================================================
+   Tuning panel
+   ========================================================================= */
+
+#tune-toggle {
+  position: fixed;
+  top: env(safe-area-inset-top, 10px);
+  right: env(safe-area-inset-right, 12px);
+  width: 44px;
+  height: 44px;
+  border-radius: 22px;
+  background: rgba(11, 17, 21, 0.85);
+  border: 1px solid #3a4d62;
+  color: #e8eef5;
+  font-size: 22px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 20;
+  -webkit-tap-highlight-color: transparent;
+}
+#tune-toggle:active { background: #2a3a4a; }
+
+#tune-panel {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: min(360px, 92vw);
+  background: #11181f;
+  border-left: 1px solid #2a3a4a;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+  transform: translateX(105%);
+  transition: transform 220ms ease-out;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  padding: env(safe-area-inset-top, 12px) 14px 14px 14px;
+  overflow: hidden;
+  pointer-events: auto;
+  touch-action: pan-y;
+}
+#tune-panel.open { transform: translateX(0); }
+
+.tune-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-weight: 700;
+  font-size: 16px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #2a3a4a;
+  margin-bottom: 8px;
+}
+#tune-close {
+  background: transparent;
+  border: 0;
+  color: #9eb2c6;
+  font-size: 22px;
+  cursor: pointer;
+  width: 36px;
+  height: 36px;
+  border-radius: 18px;
+}
+#tune-close:active { background: #1b2530; }
+
+#tune-sliders {
+  flex: 1 1 auto;
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
-#fps-line {
-  opacity: 0.85;
+.tune-group-header {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7d92a6;
+  margin: 14px 0 6px 2px;
+}
+
+.tune-row { margin-bottom: 12px; }
+.tune-row-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 4px;
+}
+.tune-label { font-size: 13px; color: #d0d8e1; }
+.tune-value {
+  font-size: 12px;
+  color: #f1d27a;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.tune-slider {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 28px;
+  background: transparent;
+  touch-action: pan-y;
+}
+.tune-slider::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 3px;
+  background: linear-gradient(to right, #3a4d62, #48b6ff);
+}
+.tune-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: #f1d27a;
+  border: 2px solid #c98f29;
+  margin-top: -8px;
+  cursor: pointer;
+}
+.tune-slider::-moz-range-track {
+  height: 6px;
+  border-radius: 3px;
+  background: #3a4d62;
+}
+.tune-slider::-moz-range-thumb {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: #f1d27a;
+  border: 2px solid #c98f29;
+  cursor: pointer;
+}
+
+#tune-notes {
+  width: 100%;
+  resize: vertical;
+  min-height: 64px;
+  max-height: 140px;
+  background: #0b1115;
+  color: #e8eef5;
+  border: 1px solid #2a3a4a;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 13px;
+  margin-bottom: 12px;
+}
+
+.tune-actions {
+  display: flex;
+  gap: 8px;
+}
+.tune-actions button {
+  flex: 1 1 0;
+  height: 44px;
+  border-radius: 8px;
+  border: 1px solid #3a4d62;
+  font-weight: 600;
+  font-size: 14px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.tune-btn-primary {
+  background: #48b6ff;
+  color: #061119;
+  border-color: #48b6ff;
+}
+.tune-btn-primary:active { background: #2da3ee; }
+.tune-btn-secondary {
+  background: #1b2530;
+  color: #d0d8e1;
+}
+.tune-btn-secondary:active { background: #25323f; }
+
+#tune-toast {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  right: 14px;
+  background: #061119;
+  color: #e8eef5;
+  border: 1px solid #3a4d62;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  opacity: 0;
+  transform: translateY(8px);
+  transition: opacity 150ms, transform 150ms;
+  pointer-events: none;
+  text-align: center;
+}
+#tune-toast.show {
+  opacity: 1;
+  transform: translateY(0);
 }

@@ -9,7 +9,7 @@
 //   fetch     -> cache-first for same-origin GETs, network fallback;
 //                navigation requests fall back to index.html if offline
 
-const CACHE_VERSION = 'ss-sandbox-v0.1.0';
+const CACHE_VERSION = 'ss-sandbox-v0.2.0-m1';
 
 const SHELL_ASSETS = [
   './',
@@ -17,6 +17,8 @@ const SHELL_ASSETS = [
   './manifest.json',
   './css/styles.css',
   './js/app.js',
+  './js/params.js',
+  './js/physics.js',
   './icons/icon-192.png',
   './icons/icon-512.png',
 ];

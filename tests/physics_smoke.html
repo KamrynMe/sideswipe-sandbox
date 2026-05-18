@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Physics Smoke Test (M1)</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    body {
+      margin: 0;
+      padding: 16px;
+      font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", monospace;
+      background: #0b1115;
+      color: #e8eef5;
+    }
+    h1 { font-size: 16px; margin: 0 0 12px; }
+    .ok { color: #57d36b; }
+    .fail { color: #ff6961; font-weight: 600; }
+    .info { color: #9eb2c6; }
+    pre {
+      background: #11181f;
+      padding: 8px 12px;
+      border-radius: 6px;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sideswipe Physics Sandbox -- M1 Smoke Test</h1>
+  <pre id="out">running...</pre>
+  <script src="../js/params.js"></script>
+  <script src="../js/physics.js"></script>
+  <script>
+    (function () {
+      'use strict';
+      const out = document.getElementById('out');
+      const lines = [];
+      let allOk = true;
+      function log(msg, cls) {
+        const tag = cls === 'ok' ? '[OK]'
+                  : cls === 'fail' ? '[FAIL]'
+                  : '   ';
+        lines.push((cls ? `<span class="${cls}">${tag}</span> ` : '   ') + msg);
+        out.innerHTML = lines.join('\n');
+      }
+      function fail(msg) { allOk = false; log(msg, 'fail'); }
+
+      // ---- 1. Modules loaded ----
+      if (!window.PHYS || !window.PARAMS) {
+        fail('PHYS or PARAMS global missing -- check script load order');
+        return;
+      }
+      log('physics.js v' + window.PHYS.VERSION + ' loaded', 'ok');
+      log('params.js loaded with ' + Object.keys(window.PARAMS.DEFAULT_PARAMS).length + ' fields', 'ok');
+
+      const PHYS = window.PHYS;
+      const PARAMS = window.PARAMS;
+      const p = PARAMS.withOverrides({ ballDrag: 0, ballAngularDrag: 0 });
+      const dt = 1 / p.physicsHz;
+
+      // ---- 2. Free-fall test ----
+      const ySimStart = p.arenaHeight * 0.6;
+      let s = PHYS.makeState({
+        ball: { pos: { x: p.arenaWidth * 0.5, y: ySimStart },
+                vel: { x: 0, y: 0 }, angVel: 0 }
+      }, p);
+      const nSteps = 30;
+      const action = PHYS.makeAction();
+      for (let i = 0; i < nSteps; i++) s = PHYS.step(s, action, p, dt);
+      const tElapsed = nSteps * dt;
+      const yAnalytic = ySimStart - 0.5 * p.gravity * tElapsed * tElapsed;
+      const err = Math.abs(s.ball.pos.y - yAnalytic);
+      const tol = 2.0;
+      log(`free-fall: sim_y=${s.ball.pos.y.toFixed(4)} analytic_y=${yAnalytic.toFixed(4)} err=${err.toFixed(4)} (tol ${tol})`, 'info');
+      if (err > tol) fail('free-fall exceeded tolerance');
+      else log('free-fall integration within tolerance', 'ok');
+
+      // ---- 3. Bounce ----
+      let s2 = PHYS.makeState({
+        ball: { pos: { x: p.arenaWidth * 0.5, y: p.ballRadius + 200 },
+                vel: { x: 0, y: 0 }, angVel: 0 }
+      }, p);
+      let sawBounce = false;
+      let penetrated = false;
+      for (let i = 0; i < 1000; i++) {
+        const prevVy = s2.ball.vel.y;
+        s2 = PHYS.step(s2, action, p, dt);
+        if (prevVy < 0 && s2.ball.vel.y > 0) sawBounce = true;
+        if (s2.ball.pos.y < p.ballRadius - 1e-3) { penetrated = true; break; }
+      }
+      if (penetrated) fail('ball penetrated floor');
+      else if (!sawBounce) fail('ball never bounced');
+      else log('floor bounce test: ball bounced, no penetration', 'ok');
+
+      // ---- 4. Determinism ----
+      function runOnce() {
+        let s = PHYS.makeState({
+          ball: { pos: { x: 100, y: 1500 }, vel: { x: 200, y: 300 }, angVel: 0.5 }
+        }, p);
+        for (let i = 0; i < 500; i++) s = PHYS.step(s, action, p, dt);
+        return s;
+      }
+      const r1 = runOnce();
+      const r2 = runOnce();
+      const same = r1.ball.pos.x === r2.ball.pos.x
+                && r1.ball.pos.y === r2.ball.pos.y
+                && r1.ball.vel.x === r2.ball.vel.x
+                && r1.ball.vel.y === r2.ball.vel.y;
+      if (!same) fail('non-determinism detected');
+      else log('determinism: two independent 500-step runs are bit-identical', 'ok');
+
+      lines.push('');
+      lines.push(allOk
+        ? '<span class="ok">ALL TESTS PASS -- M1 acceptance</span>'
+        : '<span class="fail">FAIL -- see above</span>');
+      out.innerHTML = lines.join('\n');
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Sideswipe Physics Sandbox</title>
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="theme-color" content="#0b1115" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="apple-touch-icon" href="icons/icon-192.png" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="app-shell">
+    <canvas id="game-canvas"></canvas>
+    <div id="hud-top-left">
+      <div id="status-line">Hello &mdash; Phase 1</div>
+      <div id="fps-line">FPS: --</div>
+    </div>
+  </div>
+  <!-- Scripts in load order. All Phase 1 modules are vanilla classic scripts
+       that attach to globals (no ES modules, keeps file:// testing simple). -->
+  <script src="js/app.js"></script>
+</body>
+</html>
